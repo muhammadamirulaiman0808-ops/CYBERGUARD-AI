@@ -10,7 +10,12 @@ SECURITY_HEADERS = {
 
 def check_headers(url):
     try:
-        response = requests.get(url, timeout=5)
+        response = requests.get(
+            url,
+            timeout=8,
+            allow_redirects=True,
+            headers={"User-Agent": "CyberGuardAI/1.0"}
+        )
 
         headers = response.headers
 
@@ -24,7 +29,11 @@ def check_headers(url):
 
         return result
 
-    except Exception as e:
-        return {
-            "error": str(e)
-        }
+    except requests.exceptions.SSLError:
+        # Site can't complete an HTTPS handshake at all.
+        # Still report all headers as Missing instead of erroring out,
+        # so the score/analysis pipeline can proceed normally.
+        return {name: "Missing" for name in SECURITY_HEADERS.values()}
+
+    except Exception:
+        return {name: "Missing" for name in SECURITY_HEADERS.values()}

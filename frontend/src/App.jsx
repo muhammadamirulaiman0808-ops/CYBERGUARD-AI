@@ -1,65 +1,189 @@
-import Navbar from "./components/Navbar"
-import ScanBox from "./components/ScanBox"
+import {
+    BrowserRouter,
+    Routes,
+    Route
+} from "react-router-dom";
+
+
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+import History from "./pages/History";
+import Profile from "./components/Profile";
+
+
+import ProtectedRoute from "./components/ProtectedRoute";
+import FeedbackWidget from "./components/FeedbackWidget";
+
+
+
 
 
 function App(){
 
 
-return (
-
-<div className="
-min-h-screen
-bg-gray-100
-">
+return(
 
 
-<Navbar/>
+<BrowserRouter>
 
 
-<main className="
-flex
-flex-col
-items-center
-mt-20
-">
-
-
-<h1 className="
-text-6xl
-font-bold
-text-center
-">
-
-CyberGuard AI
-
-</h1>
+<Routes>
 
 
 
-<p className="
-mt-5
-text-xl
-">
 
-AI Website Security Scanner
 
-</p>
+{/* PUBLIC */}
 
 
 
-<ScanBox/>
+<Route
+
+path="/"
+
+element={<Home />}
+
+/>
 
 
-</main>
 
 
-</div>
+
+<Route
+
+path="/login"
+
+element={<Login />}
+
+/>
 
 
-)
+
+
+
+<Route
+
+path="/register"
+
+element={<Register />}
+
+/>
+
+
+
+
+
+
+
+
+{/* PROTECTED */}
+
+
+
+
+<Route
+
+
+path="/dashboard"
+
+
+element={
+
+
+<ProtectedRoute>
+
+
+<Dashboard />
+
+
+</ProtectedRoute>
 
 
 }
 
 
-export default App
+/>
+
+
+
+
+
+
+
+<Route
+
+
+path="/history"
+
+
+element={
+
+
+<ProtectedRoute>
+
+
+<History />
+
+
+</ProtectedRoute>
+
+
+}
+
+
+/>
+
+
+
+
+<Route
+
+
+path="/profile"
+
+
+element={
+
+
+<ProtectedRoute>
+
+
+<Profile />
+
+
+</ProtectedRoute>
+
+
+}
+
+
+/>
+
+
+
+
+
+</Routes>
+
+
+
+{/* Appears on every page */}
+
+
+<FeedbackWidget />
+
+
+
+</BrowserRouter>
+
+
+);
+
+
+}
+
+
+
+export default App;
