@@ -1,993 +1,221 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import API from "../api";
-import Navbar from "../components/Navbar";
-import { downloadPDF } from "../utils/pdfReport";
+import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import { Eye, Search, Trash2 } from "lucide-react";
+import Modal from "../components/Modal";
+import RiskBadge from "../components/RiskBadge";
+import ScanResult from "../components/ScanResult";
+import API, { getErrorMessage } from "../api";
+import { usePageTitle } from "../hooks/usePageTitle";
+import { riskFromName } from "../utils/risk";
 
+const FILTERS = [
+  { key: "all", label: "All" },
+  { key: "low", label: "Low" },
+  { key: "medium", label: "Medium" },
+  { key: "high", label: "High" },
+];
 
-function History(){
+export default function History() {
+  usePageTitle("History");
+  const [scans, setScans] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [detail, setDetail] = useState(null); // { title, result } or { title, loading } or { title, error }
+  const [confirm, setConfirm] = useState(null); // { type: "one", scan } or { type: "all" }
+  const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    let active = true;
+    API.get("/history", { params: { limit: 500 } })
+      .then((res) => {
+        if (!active) return;
+        setScans(res.data);
+        setLoadError("");
+      })
+      .catch((err) => {
+        if (active) setLoadError(getErrorMessage(err, "Could not load your history."));
+      });
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
 
-const navigate = useNavigate();
+  const visible = useMemo(() => {
+    if (!scans) return [];
+    const term = query.trim().toLowerCase();
+    return scans.filter(
+      (scan) =>
+        (filter === "all" || riskFromName(scan.risk).key === filter) &&
+        (!term || scan.website.toLowerCase().includes(term)),
+    );
+  }, [scans, query, filter]);
 
-const [history,setHistory] = useState([]);
+  function openDetail(scan) {
+    setDetail({ title: scan.website, loading: true });
+    API.get(`/history/${scan.id}`)
+      .then((res) => {
+        const result = res.data.result;
+        setDetail(
+          result
+            ? { title: scan.website, result }
+            : { title: scan.website, error: "No saved details for this scan." },
+        );
+      })
+      .catch((err) => setDetail({ title: scan.website, error: getErrorMessage(err) }));
+  }
 
-const [loading,setLoading] = useState(true);
+  async function confirmDelete() {
+    if (!confirm) return;
+    setBusy(true);
+    try {
+      if (confirm.type === "all") {
+        await API.delete("/history");
+        toast.success("History cleared.");
+      } else {
+        await API.delete(`/history/${confirm.scan.id}`);
+        toast.success("Scan deleted.");
+      }
+      setConfirm(null);
+      setReloadKey((value) => value + 1);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-const [deletingId,setDeletingId] = useState(null);
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-widest text-accent">History</p>
+          <h1 className="mt-1 font-display text-3xl font-bold">Past scans</h1>
+        </div>
+        {scans?.length > 0 && (
+          <button type="button" onClick={() => setConfirm({ type: "all" })} className="btn btn-danger btn-sm">
+            <Trash2 size={14} />
+            Clear all
+          </button>
+        )}
+      </div>
 
-const [search,setSearch] = useState("");
+      {loadError && (
+        <div role="alert" className="rounded-[5px] border border-bad/40 bg-bad/10 px-4 py-3 text-sm text-bad">
+          {loadError}{" "}
+          <button type="button" className="font-medium underline" onClick={() => setReloadKey((v) => v + 1)}>
+            Try again
+          </button>
+        </div>
+      )}
 
-const [viewingResult,setViewingResult] = useState(null);
+      {scans === null && !loadError && <p className="text-fg-muted">Loading your scans...</p>}
 
+      {scans?.length === 0 && (
+        <p className="panel px-5 py-10 text-center text-fg-muted">No scans yet. Run one from the dashboard.</p>
+      )}
 
+      {scans?.length > 0 && (
+        <>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search
+                size={16}
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-subtle"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by website"
+                aria-label="Search by website"
+                className="input pl-10"
+              />
+            </div>
+            <div className="flex gap-1" role="group" aria-label="Filter by risk">
+              {FILTERS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setFilter(item.key)}
+                  aria-pressed={filter === item.key}
+                  className={`rounded-[5px] border px-3 py-2 text-sm font-medium transition-colors ${
+                    filter === item.key
+                      ? "border-accent/60 bg-accent/10 text-accent"
+                      : "border-line-strong text-fg-muted hover:bg-surface-2"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-useEffect(()=>{
+          {visible.length === 0 ? (
+            <p className="panel px-5 py-8 text-center text-fg-muted">No scans match your search.</p>
+          ) : (
+            <ul className="panel divide-y divide-line">
+              {visible.map((scan) => (
+                <li key={scan.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-all font-mono text-sm">{scan.website}</p>
+                    <p className="text-xs text-fg-subtle">{scan.date}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 text-right font-display text-lg font-bold tabular-nums">{scan.score}</span>
+                    <RiskBadge risk={scan.risk} />
+                    <button
+                      type="button"
+                      onClick={() => openDetail(scan)}
+                      className="btn btn-ghost btn-sm"
+                      aria-label={`View scan of ${scan.website}`}
+                    >
+                      <Eye size={14} />
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirm({ type: "one", scan })}
+                      className="grid h-8 w-8 place-items-center rounded text-fg-subtle hover:bg-bad/10 hover:text-bad"
+                      aria-label={`Delete scan of ${scan.website}`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
 
+      <Modal open={Boolean(detail)} onClose={() => setDetail(null)} title={detail?.title || ""} wide>
+        {detail?.loading && <p className="text-fg-muted">Loading...</p>}
+        {detail?.error && <p className="text-bad">{detail.error}</p>}
+        {detail?.result && <ScanResult result={detail.result} />}
+      </Modal>
 
-fetchHistory();
-
-
-},[]);
-
-
-
-async function fetchHistory(){
-
-
-try{
-
-setLoading(true);
-
-const res = await API.get(
-"/history"
-);
-
-
-setHistory(res.data);
-
-
-
+      <Modal
+        open={Boolean(confirm)}
+        onClose={() => !busy && setConfirm(null)}
+        title={confirm?.type === "all" ? "Clear all history?" : "Delete this scan?"}
+      >
+        <p className="text-fg-muted">
+          {confirm?.type === "all"
+            ? "Every saved scan will be removed. This cannot be undone."
+            : `The scan of ${confirm?.scan?.website} will be removed. This cannot be undone.`}
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirm(null)} disabled={busy} className="btn btn-ghost">
+            Cancel
+          </button>
+          <button type="button" onClick={confirmDelete} disabled={busy} className="btn btn-danger">
+            {busy ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </Modal>
+    </div>
+  );
 }
-
-catch(err){
-
-
-console.log(err);
-
-
-}
-
-finally{
-
-
-setLoading(false);
-
-
-}
-
-
-
-}
-
-
-
-async function deleteOne(id){
-
-
-if(!window.confirm(
-"Delete this scan record?"
-)){
-
-return;
-
-}
-
-
-try{
-
-setDeletingId(id);
-
-await API.delete(
-`/history/${id}`
-);
-
-setHistory(
-
-history.filter(
-(item)=>item.id !== id
-)
-
-);
-
-
-}
-
-catch(err){
-
-console.log(err);
-
-alert(
-"Failed to delete scan"
-);
-
-}
-
-finally{
-
-setDeletingId(null);
-
-}
-
-
-}
-
-
-
-async function deleteAll(){
-
-
-if(history.length === 0){
-
-return;
-
-}
-
-
-if(!window.confirm(
-"Delete ALL scan history? This cannot be undone."
-)){
-
-return;
-
-}
-
-
-try{
-
-await API.delete(
-"/history"
-);
-
-setHistory([]);
-
-
-}
-
-catch(err){
-
-console.log(err);
-
-alert(
-"Failed to clear history"
-);
-
-}
-
-
-}
-
-
-
-function viewResult(item){
-
-
-if(!item.details){
-
-alert(
-"No detailed data available for this scan (older record)."
-);
-
-return;
-
-}
-
-
-try{
-
-const parsed = JSON.parse(item.details);
-
-setViewingResult(parsed);
-
-}
-
-catch(err){
-
-console.log(err);
-
-alert(
-"Failed to load scan details."
-);
-
-}
-
-
-}
-
-
-
-// Filter history by website name based on search input
-const filteredHistory = history.filter(
-(item)=>
-
-item.website
-
-.toLowerCase()
-
-.includes(
-
-search.toLowerCase()
-
-)
-
-);
-
-
-
-function getRisk(score){
-
-
-if(score >= 80){
-
-return { text:"SAFE", badge:"bg-green-500" };
-
-}
-
-if(score >= 50){
-
-return { text:"WARNING", badge:"bg-yellow-500" };
-
-}
-
-return { text:"DANGEROUS", badge:"bg-red-500" };
-
-
-}
-
-
-
-
-
-
-return(
-
-<div className="
-min-h-screen
-bg-gray-100
-dark:bg-gray-900
-transition-colors
-duration-300
-">
-
-
-<Navbar />
-
-
-
-<div className="max-w-6xl mx-auto p-8">
-
-
-
-<button
-
-onClick={()=>navigate("/dashboard")}
-
-className="
-mb-4
-text-gray-600
-dark:text-gray-300
-hover:text-blue-600
-dark:hover:text-blue-400
-font-bold
-flex
-items-center
-gap-2
-transition-colors
-"
-
->
-
-← Back to Dashboard
-
-</button>
-
-
-
-
-<div className="
-flex
-justify-between
-items-center
-mb-6
-flex-wrap
-gap-3
-">
-
-
-<h1 className="
-text-3xl
-font-bold
-text-gray-900
-dark:text-white
-">
-
-📜 Scan History
-
-</h1>
-
-
-
-
-{
-
-history.length > 0 &&
-
-
-<button
-
-onClick={deleteAll}
-
-className="
-bg-red-600
-hover:bg-red-700
-text-white
-px-4
-py-2
-rounded-lg
-font-bold
-transition-colors
-"
-
->
-
-🗑️ Clear All
-
-</button>
-
-
-}
-
-
-</div>
-
-
-
-
-{/* SEARCH BAR */}
-
-
-{
-
-history.length > 0 &&
-
-
-<input
-
-
-className="
-w-full
-border
-border-gray-300
-dark:border-gray-600
-dark:bg-gray-700
-dark:text-white
-dark:placeholder-gray-400
-p-3
-rounded-lg
-mb-6
-"
-
-
-placeholder="🔍 Search by website..."
-
-
-value={search}
-
-
-onChange={
-(e)=>setSearch(e.target.value)
-}
-
-
-/>
-
-
-}
-
-
-
-
-{
-
-loading ?
-
-<p className="text-gray-700 dark:text-gray-300">Loading...</p>
-
-
-:
-
-
-history.length === 0 ?
-
-<div className="
-bg-white
-dark:bg-gray-800
-p-6
-rounded-xl
-shadow
-text-gray-700
-dark:text-gray-300
-transition-colors
-">
-
-No scan history
-
-</div>
-
-
-:
-
-filteredHistory.length === 0 ?
-
-<div className="
-bg-white
-dark:bg-gray-800
-p-6
-rounded-xl
-shadow
-text-gray-700
-dark:text-gray-300
-transition-colors
-">
-
-No results for "{search}"
-
-</div>
-
-
-:
-
-
-<div className="space-y-4">
-
-
-{
-
-filteredHistory.map((item)=>(
-
-
-<div
-
-key={item.id}
-
-className="
-bg-white
-dark:bg-gray-800
-shadow
-rounded-xl
-p-5
-flex
-justify-between
-items-center
-transition-colors
-"
-
-
->
-
-
-<div>
-
-<h2 className="
-font-bold
-text-lg
-text-gray-900
-dark:text-white
-">
-
-{item.website}
-
-</h2>
-
-
-<p className="
-text-gray-500
-dark:text-gray-400
-">
-
-{item.date}
-
-</p>
-
-
-</div>
-
-
-
-
-<div className="
-flex
-items-center
-gap-4
-">
-
-
-<div className="font-bold text-blue-600 dark:text-blue-400">
-
-{item.score}%
-
-</div>
-
-
-
-<button
-
-onClick={()=>viewResult(item)}
-
-className="
-text-gray-500
-hover:text-blue-600
-dark:text-gray-400
-dark:hover:text-blue-400
-transition-colors
-"
-
-title="View full result"
-
->
-
-📄
-
-</button>
-
-
-
-<button
-
-onClick={()=>deleteOne(item.id)}
-
-disabled={deletingId === item.id}
-
-className="
-text-red-500
-hover:text-red-700
-disabled:opacity-50
-transition-colors
-"
-
-title="Delete this scan"
-
->
-
-{
-
-deletingId === item.id
-
-?
-
-"..."
-
-:
-
-"🗑️"
-
-}
-
-</button>
-
-
-</div>
-
-
-
-</div>
-
-
-))
-
-
-}
-
-
-</div>
-
-
-}
-
-
-
-</div>
-
-
-
-
-{/* VIEW RESULT MODAL */}
-
-
-{
-
-viewingResult &&
-
-
-<div
-
-onClick={()=>setViewingResult(null)}
-
-className="
-fixed
-inset-0
-bg-black/50
-flex
-items-center
-justify-center
-p-4
-z-50
-"
-
->
-
-
-<div
-
-onClick={(e)=>e.stopPropagation()}
-
-className="
-bg-white
-dark:bg-gray-800
-rounded-xl
-shadow-xl
-max-w-2xl
-w-full
-max-h-[85vh]
-overflow-y-auto
-p-6
-transition-colors
-"
-
->
-
-
-<div className="
-flex
-justify-between
-items-center
-mb-4
-">
-
-
-<h2 className="
-text-xl
-font-bold
-text-gray-900
-dark:text-white
-">
-
-📄 Scan Result — {viewingResult.website}
-
-</h2>
-
-
-
-<button
-
-onClick={()=>setViewingResult(null)}
-
-className="
-text-gray-500
-hover:text-red-500
-text-2xl
-leading-none
-"
-
->
-
-×
-
-</button>
-
-
-</div>
-
-
-
-
-{/* SCORE */}
-
-
-<div className="
-text-center
-mb-6
-">
-
-
-<p className="text-4xl font-bold text-gray-900 dark:text-white">
-
-{viewingResult.security_score}%
-
-</p>
-
-
-<span
-
-className={`
-inline-block
-mt-2
-text-white
-px-4
-py-1
-rounded-full
-font-bold
-text-sm
-${getRisk(viewingResult.security_score).badge}
-`}
-
->
-
-{getRisk(viewingResult.security_score).text}
-
-</span>
-
-
-</div>
-
-
-
-
-{/* SECURITY SUMMARY */}
-
-
-<div className="
-grid
-grid-cols-3
-gap-3
-mb-6
-text-center
-">
-
-
-<div className="
-bg-gray-100
-dark:bg-gray-700
-rounded-lg
-p-3
-">
-
-<p className="text-xs text-gray-500 dark:text-gray-400 font-bold">
-
-🔒 HTTPS
-
-</p>
-
-<p className="text-sm mt-1 text-gray-900 dark:text-white">
-
-{
-
-viewingResult.https === "Enabled"
-
-?
-
-"Enabled"
-
-:
-
-"Not Secure"
-
-}
-
-</p>
-
-</div>
-
-
-
-<div className="
-bg-gray-100
-dark:bg-gray-700
-rounded-lg
-p-3
-">
-
-<p className="text-xs text-gray-500 dark:text-gray-400 font-bold">
-
-📜 SSL
-
-</p>
-
-<p className="text-sm mt-1 text-gray-900 dark:text-white">
-
-{viewingResult.ssl?.status || "Unknown"}
-
-</p>
-
-</div>
-
-
-
-<div className="
-bg-gray-100
-dark:bg-gray-700
-rounded-lg
-p-3
-">
-
-<p className="text-xs text-gray-500 dark:text-gray-400 font-bold">
-
-🛡 Headers
-
-</p>
-
-<p className="text-sm mt-1 text-gray-900 dark:text-white">
-
-{Object.keys(viewingResult.headers || {}).length} Checked
-
-</p>
-
-</div>
-
-
-</div>
-
-
-
-
-{/* ANALYSIS */}
-
-
-<div className="mb-6">
-
-
-<h3 className="
-font-bold
-mb-2
-text-gray-900
-dark:text-white
-">
-
-🤖 AI Security Analysis
-
-</h3>
-
-
-<ul className="
-list-disc
-ml-5
-text-sm
-text-gray-700
-dark:text-gray-300
-space-y-1
-">
-
-
-{
-
-viewingResult.analysis?.length > 0
-
-?
-
-viewingResult.analysis.map(
-
-(item,index)=>(
-
-<li key={index}>{item}</li>
-
-)
-
-)
-
-:
-
-<li>No analysis available</li>
-
-}
-
-
-</ul>
-
-
-</div>
-
-
-
-
-{/* RECOMMENDATIONS */}
-
-
-<div className="mb-6">
-
-
-<h3 className="
-font-bold
-mb-2
-text-gray-900
-dark:text-white
-">
-
-💡 Recommendations
-
-</h3>
-
-
-<ul className="
-list-disc
-ml-5
-text-sm
-text-gray-700
-dark:text-gray-300
-space-y-1
-">
-
-
-{
-
-viewingResult.recommendations?.length > 0
-
-?
-
-viewingResult.recommendations.map(
-
-(item,index)=>(
-
-<li key={index}>{item}</li>
-
-)
-
-)
-
-:
-
-<li>No recommendation available</li>
-
-}
-
-
-</ul>
-
-
-</div>
-
-
-
-
-<button
-
-onClick={()=>downloadPDF(viewingResult)}
-
-className="
-w-full
-bg-green-600
-hover:bg-green-700
-text-white
-py-3
-rounded-lg
-font-bold
-transition-colors
-"
-
->
-
-📄 Download Security Report
-
-</button>
-
-
-
-</div>
-
-
-</div>
-
-
-}
-
-
-
-</div>
-
-
-);
-
-
-}
-
-
-export default History;

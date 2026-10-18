@@ -1,60 +1,16 @@
-function RiskBadge({score}){
+import { TONE, getRisk, riskFromName } from "../utils/risk";
 
+// Pass `risk` ("Low" / "Medium" / "High" as stored) or a numeric `score`.
+export default function RiskBadge({ risk, score, className = "" }) {
+  const level = risk ? riskFromName(risk) : getRisk(score);
+  const tone = TONE[level.tone];
 
-let risk;
-
-let style;
-
-
-
-if(score >=80){
-
-risk="LOW";
-
-style="bg-green-500";
-
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-[4px] border px-2.5 py-1 font-mono text-xs font-medium ${tone.text} ${tone.bg} ${tone.border} ${className}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${tone.solid}`} aria-hidden="true" />
+      {level.label}
+    </span>
+  );
 }
-
-else if(score>=50){
-
-risk="MEDIUM";
-
-style="bg-yellow-500";
-
-}
-
-else{
-
-risk="HIGH";
-
-style="bg-red-500";
-
-}
-
-
-
-
-return(
-
-<span
-
-className={
-
-`${style} text-white px-4 py-2 rounded-full font-bold`
-
-}
-
->
-
-{risk}
-
-</span>
-
-
-)
-
-
-}
-
-
-export default RiskBadge;
