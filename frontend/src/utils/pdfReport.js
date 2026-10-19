@@ -9,7 +9,7 @@ const GREY = [95, 110, 125];
 const MARGIN = 40;
 
 // jsPDF's built-in fonts only cover basic Latin, so keep the text plain.
-const clean = (text) => String(text ?? "").replace(/`/g, "").replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
+const clean = (text) => String(text ?? "").replace(/`/g, "").replace(/[^\x20-\x7E -ÿ]/g, "");
 
 const HEADER_NAMES = {
   HSTS: "Strict-Transport-Security",

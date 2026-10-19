@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ThemeContext } from "./themeContext";
+import { ThemeContext } from "./themeState";
 
 function initialTheme() {
   try {

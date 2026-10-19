@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { AuthContext } from "./authContext";
+import { AuthContext } from "./authState";
 import {
   UNAUTHORIZED_EVENT,
   clearSession,

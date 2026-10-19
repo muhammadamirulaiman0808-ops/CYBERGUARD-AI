@@ -1,6 +1,7 @@
 import json
 
 from app.core.url_guard import UnsafeTargetError
+from app.routers import auth as auth_router
 from app.routers import scan as scan_router
 from app.services.scanner import ScanError
 
@@ -31,6 +32,7 @@ def test_register_validation_messages(client):
         ({"username": "mir", "email": "a@b.co", "password": "NoNumbersHere"}, "number"),
     ]
     for payload, expected in cases:
+        auth_router.register_limiter.reset()
         r = client.post("/register", json=payload)
         assert r.status_code == 422, payload
         assert isinstance(r.json()["detail"], str)
