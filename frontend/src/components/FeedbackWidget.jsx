@@ -1,14 +1,85 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { MessageSquare, Star } from "lucide-react";
 import Modal from "./Modal";
 import API, { getErrorMessage } from "../api";
 
+const SIZE = 44;
+const MARGIN = 12;
+const STORAGE_KEY = "feedback-pos";
+
+function clamp(pos) {
+  return {
+    x: Math.min(Math.max(pos.x, MARGIN), Math.max(window.innerWidth - SIZE - MARGIN, MARGIN)),
+    y: Math.min(Math.max(pos.y, MARGIN), Math.max(window.innerHeight - SIZE - MARGIN, MARGIN)),
+  };
+}
+
+function initialPosition() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) return clamp(saved);
+  } catch {
+    // storage unavailable or corrupt, use the default
+  }
+  // Default: bottom-left, small, away from the page content and the right-hand scrollbar area.
+  return clamp({ x: MARGIN, y: window.innerHeight - SIZE - MARGIN });
+}
+
 export default function FeedbackWidget() {
+  const [pos, setPos] = useState(initialPosition);
+  const drag = useRef(null);
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Keep the button on screen if the window is resized or the phone is rotated.
+  useEffect(() => {
+    const onResize = () => setPos((current) => clamp(current));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  function onPointerDown(event) {
+    drag.current = { startX: event.clientX, startY: event.clientY, originX: pos.x, originY: pos.y, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onPointerMove(event) {
+    const d = drag.current;
+    if (!d) return;
+    const dx = event.clientX - d.startX;
+    const dy = event.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) < 5) return; // small movement still counts as a click
+    d.moved = true;
+    setPos(clamp({ x: d.originX + dx, y: d.originY + dy }));
+  }
+
+  function onPointerUp(event) {
+    const d = drag.current;
+    drag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!d) return;
+    if (d.moved) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(clamp(pos)));
+      } catch {
+        // ignore
+      }
+    } else {
+      setOpen(true);
+    }
+  }
+
+  function onKeyDown(event) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen(true);
+    }
+  }
 
   function close() {
     setOpen(false);
@@ -38,12 +109,19 @@ export default function FeedbackWidget() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="btn btn-primary fixed bottom-5 right-5 z-30 shadow-lg"
-        aria-label="Send feedback"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+        onKeyDown={onKeyDown}
+        style={{ left: pos.x, top: pos.y, width: SIZE, height: SIZE, touchAction: "none" }}
+        className="fixed z-30 grid cursor-grab touch-none select-none place-items-center rounded-full border border-accent/50 bg-surface text-accent shadow-lg transition-colors hover:bg-accent hover:text-accent-fg active:cursor-grabbing"
+        aria-label="Send feedback (drag to move)"
+        title="Feedback (drag to move)"
       >
-        <MessageSquare size={16} />
-        <span className="hidden sm:inline">Feedback</span>
+        <MessageSquare size={18} />
       </button>
 
       <Modal open={open} onClose={close} title="Send feedback">
